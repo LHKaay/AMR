@@ -1,0 +1,245 @@
+.nav-bar {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 14px 20px !important;       /* Taller header */
+    min-height: 70px !important;         /* Controls overall header height */
+    background-color: #FFFFFF;
+}
+
+.nav-buttons button {
+    background: transparent !important;
+    border: none !important;
+    color: #1A2B3C !important;
+    font-weight: 800;
+    font-size: 20px !important;          /* Larger text */
+    padding: 14px 26px !important;       /* Larger clickable area */
+    transition: 0.25s;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0.1, 0.1, 0.1, 0.1);
+}
+
+.nav-buttons button:hover {
+    background-color: rgba(44, 62, 80, 0.12) !important;
+    transform: translateY(-2px);
+}
+
+
+/* Ensure the main content area is constrained */
+.main-container {
+    height: calc(100vh - 70px) !important; 
+    overflow: hidden !important;
+    position: relative !important; /* Important for overall layout */
+}
+
+.menu-sidebar {
+    /* Push the sidebar down by the height of your nav bar (approx 80px - 100px) */
+    /* top: 100px !important;  */
+    margin-top: 100px;
+    height: 750px !important;
+    margin-bottom: 100px;
+    /* bottom: 100px !important; Leave space at the bottom for the info row */
+    /* padding: 14px; */
+    /* border-radius: 10px; */
+    /* overflow-y: auto !important;  */
+    /* Remove position: relative since we are anchoring the child to the viewport */
+    /* position: unset !important; /* Remove specific positioning to prevent conflicts */
+    /* border: 1px solid #e5e7eb !important; 
+    border-radius: 12px !important; 
+    display: block !important; */
+}
+
+/* The Main Footer Container */
+/* --- Footer Container --- */
+.amr_info_row {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 20% !important;
+    height: 40px !important;
+    padding: 0 20px !important;
+    
+    display: flex !important;
+    align-items: center !important; /* Center vertically */
+    justify-content: flex-start !important; /* Pack items to the Left */
+    gap: 10px !important;
+    
+    background-color: #ffffff00;
+    border: none !important;
+    z-index: 9999;
+}
+
+/* --- THE TEXT FIX --- */
+
+/* 1. Strip the outer container styles */
+.amr_info {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    flex-grow: 1 !important; /* Let text take remaining space */
+    min-width: 0 !important;
+}
+
+/* 2. Strip the inner container/block styles */
+.amr_info .block, 
+.amr_info .form {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+/* 3. Style the actual text input area */
+.amr_info h2 {
+    text-align: left !important;  /* <--- MOVES TEXT TO LEFT */
+    font-size: 12px !important;
+    color: #333 !important;
+    
+    /* Remove the box look */
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    
+    padding: 5px 0 0 0 !important; /* slight top pad to align with button */
+    margin: 0 !important;
+    resize: none !important;      /* Remove resize handle */
+    overflow: hidden !important;
+}
+
+.reload-btn {
+    /* KEY FIX: Stop the button from growing */
+    flex: 0 0 auto !important; 
+    
+    /* Force exact dimensions */
+    width: 32px !important;
+    min-width: 32px !important;
+    max-width: 32px !important;
+    height: 32px !important;
+    
+    /* Center the icon */
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    
+    /* Styling */
+    background: transparent !important;
+    border: 1px solid #ddd !important;
+    border-radius: 4px !important;
+    font-size: 18px !important;
+    color: #555 !important;
+    margin-right: 8px !important; /* Space between button and text */
+}
+
+/* Optional hover effect */
+.reload-btn:hover {
+    background-color: #f0f0f0 !important;
+    color: #000 !important;
+    border-color: #bbb !important;
+}
+
+#map_viewer, #mapping_viewer { 
+    height: 75vh !important; 
+    background: #ffffff; 
+    overflow: hidden; 
+    border-radius: 15px; 
+    border: 1px solid #4b5563;
+    margin-bottom: 20px !important;
+}
+
+.image-container { 
+    width: 100%; 
+    height: 100%; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    background-color: #ffffff00; 
+    overflow: hidden !important; 
+    cursor: crosshair; 
+    position: relative;
+}
+
+.image-container img { 
+    max-width: none !important; 
+    width: 100%; 
+    height: 100%; 
+    object-fit: contain; 
+    display: block; 
+    transform-origin: 0 0; 
+    transition: transform 0.1s ease-out; /* 부드러운 줌 효과 */
+    pointer-events: auto;
+}
+
+#map_viewer .image-button-container, #map_viewer .actions, #map_viewer .toolbar,
+#mapping_viewer .image-button-container, #mapping_viewer .actions, #mapping_viewer .toolbar { display: none !important; }
+
+#msis_button {
+    background: transparent !important;
+    border: none !important;
+    color: #1A2B3C !important;
+    font-weight: 800;
+    font-size: 20px !important;          /* Larger text */
+    padding: 14px 26px !important;       /* Larger clickable area */
+    transition: 0.25s;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0.1, 0.1, 0.1, 0.1);
+}
+
+.image-container .icon-button-wrapper{
+    visibility: hidden !important;
+}
+
+
+/* --- Floating 3D Model (Picture-in-Picture) --- */
+#msis_amr_3dviewer {
+    /* Default State (Small & Bottom-Right) */
+    position: fixed !important;
+    bottom: 60px !important;
+    right: 20px !important;
+    width: 20px !important;
+    height: 150px !important;
+    z-index: 10000 !important;
+    
+    background: #fff !important;
+    border: 2px solid #e5e7eb !important;
+    border-radius: 12px !important;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+    
+    /* Animation settings */
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    
+    /* Layout Overrides */
+    display: block !important; 
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+}
+
+/* --- The "Expanded" State (Triggered by JS) --- */
+#msis_amr_3dviewer.expanded {
+    bottom: 50% !important;   /* Move to center vertical */
+    right: 50% !important;    /* Move to center horizontal */
+    transform: translate(50%, 50%) !important; /* Perfect centering */
+    
+    width: 60vw !important;   /* 60% of screen width */
+    height: 60vh !important;  /* 60% of screen height */
+    
+    border-color: #3b82f6 !important; /* Blue border to indicate active */
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* Internal Canvas Fixes */
+#msis_amr_3dviewer canvas {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    display: block !important;
+}
+
+/* Hide UI elements */
+#msis_amr_3dviewer .label-wrap,
+#msis_amr_3dviewer .icon-button,
+#msis_amr_3dviewer .download {
+    display: none !important;
+}
