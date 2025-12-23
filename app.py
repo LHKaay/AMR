@@ -10,13 +10,8 @@ import time
 from branca.element import MacroElement
 from jinja2 import Template
 
-# [Required] Import 'manager' object from rest_api
-try:
-    from rest_api import manager
-except ImportError:
-    # Fallback if manager instance is not created in rest_api
-    from rest_api import AMRManager
-    manager = AMRManager()
+from rest_api import manager
+
 
 # --------------------------
 # 1. Map Data Processing & SVG Generation
@@ -185,7 +180,7 @@ class MSISManager(MacroElement):
                             // Draw fewer dots for performance (every 2nd point)
                             if (i % 2 === 0) { 
                                 L.circleMarker(coord, {
-                                    radius: 1, color: '#FF0000', fillOpacity: 0.8, stroke: false, 
+                                    radius: 3, color: '#FF0000', fillOpacity: 0.8, stroke: false, 
                                     interactive: false, pane: 'customRobotPane'
                                 }).addTo(lidarLayer);
                             }
@@ -462,8 +457,8 @@ with gr.Blocks(title="MSIS Control Studio") as demo:
     btn_right.click(lambda r: manual_move(r, 2), [robot_dropdown], None)
     btn_stop.click(cmd_stop, [robot_dropdown], None)
 
-    # Combined Timer (Safe Update) - 0.5s is safer for preventing connection refused
-    timer = gr.Timer(value=0.5)
+    # Combined Timer (Safe Update) - 0.2s is safer for preventing connection refused
+    timer = gr.Timer(value=0.2)
     timer.tick(
         update_all_loop,
         inputs=[robot_dropdown, chk_map, chk_laser, chk_robot, chk_axis],
