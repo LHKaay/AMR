@@ -6,6 +6,8 @@ def main():
     # 1. Connection
     print("=== MSIS AMR Control System ===")
     ip_address = "192.168.0.132"
+    
+    # We use connect_to_amr helper to initialize/register the robot
     robot = rest_api.connect_to_amr(ip_address)
     
     if not robot:
@@ -17,7 +19,10 @@ def main():
 
     # 3. Map Operations
     print("\n--- Map Operations ---")
-    raw_map = rest_api.get_map_data(robot)
+    
+    # [MODIFIED] Use method directly: robot.get_map_explore()
+    raw_map = robot.get_map_explore() 
+    
     if raw_map:
         grid, meta = controller.create_map_from_data(raw_map)
         print(f"Map Loaded: {meta['width']}x{meta['height']} pixels")
@@ -36,8 +41,8 @@ def main():
     # 4. Movement Operations
     print("\n--- Movement Operations ---")
     
-    # Get Start Position
-    start_pose = rest_api.get_current_position(robot)
+    # [MODIFIED] Use method directly: robot.get_pose()
+    start_pose = robot.get_pose()
     print(f"Start Pose: {start_pose}")
 
     # A. Move Straight (Relative)

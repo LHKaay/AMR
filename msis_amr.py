@@ -15,9 +15,10 @@ class MSIS_AMR_Controller:
         self.robot = robot
         self.current_map_grid = None
         self.map_meta = None
-        self.path_history = [] # Stores visited coordinates
+        self.path_history = []  # Stores visited coordinates
         self.map_objects = []
-
+        self.planned_path = []  # Path planned by user (clicks)
+        
     # ---------------------------------------------------------
     # Map Processing Functions
     # ---------------------------------------------------------
@@ -35,7 +36,7 @@ class MSIS_AMR_Controller:
         res = struct.unpack("<f", map_data[16:20])[0]
         grid_data = map_data[36:36 + (nx * ny)]
         
-        # 0-100 probability to 0-255 grayscale
+        # Convert 0-100 probability to 0-255 grayscale (uint8)
         grid = np.frombuffer(grid_data, dtype=np.uint8).reshape((ny, nx))
         
         self.current_map_grid = grid
@@ -47,6 +48,122 @@ class MSIS_AMR_Controller:
             'width': nx, 'height': ny
         }
         return grid, self.map_meta
+    
+    # Coordinate Transformation Helpers
+    def pixel_to_world(self, px, py):
+        """Converts pixel coordinates (image x, y) to world coordinates (meters)."""
+        if not self.map_meta: return 0, 0
+        res = self.map_meta['resolution']
+        ox = self.map_meta['origin_x']
+        oy = self.map_meta['origin_y']
+        h = self.map_meta['height']
+        
+        # Invert Y-axis: Image (Top-0) -> Map (Bottom-0)
+        real_py = h - 1 - py 
+        
+        wx = (px * res) + ox
+        wy = (real_py * res) + oy
+        return wx, wy
+    
+    def world_to_pixel(self, wx, wy):
+        """Converts world coordinates (meters) to pixel coordinates."""
+        if not self.map_meta: return 0, 0
+        res = self.map_meta['resolution']
+        ox = self.map_meta['origin_x']
+        oy = self.map_meta['origin_y']
+        h = self.map_meta['height']
+        
+        px = int((wx - ox) / res)
+        grid_y = int((wy - oy) / res)
+        
+        # Invert Y-axis: Map (Bottom-0) -> Image (Top-0)
+        py = h - 1 - grid_y
+        return px, py
+
+    def get_map_image_with_overlays(self):
+        """Returns the current map with robot position, path history, and planned path drawn (RGB Numpy Array)."""
+        if self.current_map_grid is None: 
+            return np.zeros((100, 100, 3), dtype=np.uint8)
+
+        # 1. Convert Grayscale Grid to RGB
+        # Flip vertically to match visual orientation (Image 0,0 is top-left)
+        base_grid = np.flipud(self.current_map_grid)
+        img_color = cv2.cvtColor(base_grid, cv2.COLOR_GRAY2RGB)
+        
+        # 2. Color Correction (Optional)
+        # Unexplored(128) -> Gray, Obstacle(>128) -> Black, Free(0) -> White
+
+        # 3. Draw Path History (Red Dots)
+        for wx, wy in self.path_history:
+            px, py = self.world_to_pixel(wx, wy)
+            cv2.circle(img_color, (px, py), 2, (0, 0, 255), -1)
+
+        # 4. Draw Planned Path (Blue Line and Dots)
+        if len(self.planned_path) > 0:
+            pts = []
+            for wx, wy in self.planned_path:
+                px, py = self.world_to_pixel(wx, wy)
+                pts.append([px, py])
+                cv2.circle(img_color, (px, py), 4, (255, 0, 0), -1) # Blue dot
+            
+            if len(pts) > 1:
+                cv2.polylines(img_color, [np.array(pts)], False, (255, 0, 0), 2) # Blue line connection
+
+        # 5. Draw Current Robot Position (Green Large Dot)
+        pose = self.robot.get_pose()
+        if pose:
+            rx, ry = self.world_to_pixel(pose['x'], pose['y'])
+            cv2.circle(img_color, (rx, ry), 6, (0, 255, 0), -1) 
+            # Draw Orientation (Line)
+            yaw = pose['yaw']
+            end_x = int(rx + 15 * math.cos(yaw)) # Note: Sin sign might need check due to Y-axis inversion
+            end_y = int(ry - 15 * math.sin(yaw)) 
+            cv2.line(img_color, (rx, ry), (end_x, end_y), (0, 255, 0), 2)
+
+        return img_color
+
+    def move_smooth_path(self, points_list):
+        """
+        Moves through multiple points smoothly.
+        Switches to the next command when within a radius of the current target.
+        """
+        print(f"Starting Smooth Path: {len(points_list)} waypoints")
+        switching_radius = 0.5  # Distance (meters) to switch to next waypoint
+
+        for i, pt in enumerate(points_list):
+            is_last_point = (i == len(points_list) - 1)
+            target_x, target_y = pt['x'], pt['y']
+            
+            print(f" >> Moving to Waypoint {i+1}: ({target_x:.2f}, {target_y:.2f})")
+            self.robot.move_to(target_x, target_y)
+            
+            # Monitoring Loop
+            while True:
+                pose = self.robot.get_pose()
+                if not pose: 
+                    time.sleep(0.1)
+                    continue
+
+                self.record_path_point() # Record Path
+                
+                # Calculate Distance
+                dist = math.hypot(pose['x'] - target_x, pose['y'] - target_y)
+
+                # Wait until idle if it is the last point
+                if is_last_point:
+                    actions = self.robot.get_action_status()
+                    if not actions or len(actions) == 0:
+                        print(" >> Final Destination Reached.")
+                        break
+                
+                # If intermediate point, switch when close enough
+                else:
+                    if dist < switching_radius:
+                        print(f" >> Within {dist:.2f}m. Switching to next point...")
+                        break 
+                
+                time.sleep(0.2)
+        return True
 
     def crop_map(self, x1, y1, x2, y2):
         """
@@ -75,11 +192,8 @@ class MSIS_AMR_Controller:
 
     def add_furniture(self, type, x, y, width, height=0.0):
         """
-        가구(장애물) 정보를 리스트에 저장합니다.
-        type: 'rect' (사각형 테이블/팔레트) 또는 'circle' (원형 테이블)
-        x, y: 물리적 중심 좌표 (미터)
-        width: 너비 (미터) 또는 지름
-        height: 높이 (미터, 사각형일 경우만 사용)
+        Adds furniture (obstacle) info to the list.
+        type: 'rect' or 'circle'
         """
         self.map_objects.append({
             'type': type,
@@ -90,24 +204,19 @@ class MSIS_AMR_Controller:
 
     def save_map_as_svg(self, filename="map.svg", render_contour=True):
         """
-        기본 지도(최적화된 SVG) 위에 가구 객체들을 그려서 저장합니다.
-        Args:
-            filename: 저장할 파일 경로
-            render_contour: True일 경우 OpenCV를 이용해 벽의 윤곽선을 부드럽게 그립니다.
+        Saves the map as an optimized SVG with optional contours.
         """
         if self.current_map_grid is None: return False
         
         h, w = self.current_map_grid.shape
-        # 상하 반전 (이미지 좌표계 대응: numpy 배열은 0행이 맨 위지만, 지도 데이터는 보통 0행이 y=0(아래))
-        # 하지만 display 시에는 flipud를 하여 시각적으로 맞춥니다.
+        # Flip UD for visual alignment
         grid = np.flipud(self.current_map_grid) 
         
-        # 1. SVG 헤더 생성
+        # 1. Create SVG Header
         svg_parts = [f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">']
-        svg_parts.append(f'<rect width="{w}" height="{h}" fill="#808080"/>') # 회색 배경 (미탐색 영역)
+        svg_parts.append(f'<rect width="{w}" height="{h}" fill="#808080"/>') # Gray Background
 
-        # 2. 지도 데이터 그리기 (Run-Length Encoding 최적화 적용)
-        # 픽셀 하나하나가 아니라, 연속된 색상을 하나의 rect로 병합하여 그립니다.
+        # 2. Draw Map Data (RLE Optimization)
         for y in range(h):
             row = grid[y]
             current_color = None
@@ -116,34 +225,26 @@ class MSIS_AMR_Controller:
             
             for x in range(w):
                 val = row[x]
-                # SLAMTEC 맵 데이터: 0(자유), 100(장애물), -1/128(미탐색)
-                # 여기서는 127 이상을 장애물(검정), 0 초과를 자유(흰색)으로 처리
-                if val > 127: pixel_color = "#000000" # 장애물
-                elif val == 0: pixel_color = "#FFFFFF" # 이동 가능 구역 (0으로 가정)
-                else: pixel_color = None # 그 외(미탐색 등)는 배경색 유지
+                if val > 127: pixel_color = "#000000" # Obstacle
+                elif val == 0: pixel_color = "#FFFFFF" # Free Space
+                else: pixel_color = None 
 
                 if pixel_color == current_color:
                     run_length += 1
                 else:
                     if current_color is not None:
-                        # 이전 구간 그리기
                         svg_parts.append(f'<rect x="{start_x}" y="{y}" width="{run_length}" height="1" fill="{current_color}"/>')
                     current_color = pixel_color
                     start_x = x
                     run_length = 1
-            # 행의 마지막 구간 처리
             if current_color is not None:
                 svg_parts.append(f'<rect x="{start_x}" y="{y}" width="{run_length}" height="1" fill="{current_color}"/>')
 
-        # 3. [옵션] 컨투어(윤곽선) 렌더링 - 벽을 매끄러운 선으로 표현
+        # 3. Contour Rendering
         if render_contour:
             try:
-                # 장애물 영역 마스킹 (0=이동가능, 127~255=장애물로 가정, 데이터 포맷에 따라 조정 필요)
-                # 여기서는 '이동 가능 구역(흰색)'의 경계를 따거나 '장애물'의 경계를 땁니다.
-                # 보통 이동 가능 구역(0)을 제외한 나머지를 벽으로 봅니다.
                 mask = np.zeros((h, w), dtype=np.uint8)
-                # grid > 100 인 곳을 벽으로 간주
-                mask[grid > 100] = 255 
+                mask[grid > 100] = 255 # Mask obstacles
                 
                 contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 path_str = ""
@@ -158,12 +259,11 @@ class MSIS_AMR_Controller:
                         path_str += "Z "
                 
                 if path_str:
-                    # 외곽선 스타일: 검정색 테두리
                     svg_parts.append(f'<path d="{path_str}" stroke="black" stroke-width="0.5" fill="none" shape-rendering="geometricPrecision"/>')
             except Exception as e:
                 print(f"Contour rendering failed: {e}")
 
-        # 4. 가구/장애물 객체 추가 (기존 로직 유지)
+        # 4. Add Furniture Objects
         meta = self.map_meta
         res = meta['resolution']
         ox, oy = meta['origin_x'], meta['origin_y']
@@ -171,8 +271,6 @@ class MSIS_AMR_Controller:
         for obj in self.map_objects:
             idx_x = (obj['x'] - ox) / res
             idx_y = (obj['y'] - oy) / res
-            
-            # SVG y좌표 (grid가 flipud 되었으므로 h-1-idx_y 사용)
             svg_y = h - 1 - idx_y 
             svg_x = idx_x
 
@@ -193,7 +291,7 @@ class MSIS_AMR_Controller:
                     f'fill="#FFFFFF" stroke="black" stroke-width="0.5" opacity="0.9" />'
                 )
 
-        # 5. Path(이동 경로) 그리기 - display_path_on_map 대신 SVG에 직접 추가
+        # 5. Draw Path History
         if self.path_history:
             path_svg_points = []
             for (px, py) in self.path_history:
@@ -205,7 +303,7 @@ class MSIS_AMR_Controller:
                 points_str = " ".join(path_svg_points)
                 svg_parts.append(f'<polyline points="{points_str}" fill="none" stroke="red" stroke-width="1" opacity="0.7" />')
 
-        # 6. 파일 저장
+        # 6. Write File
         svg_parts.append('</svg>')
         with open(filename, "w", encoding="utf-8") as f:
             f.write("".join(svg_parts))
@@ -215,23 +313,18 @@ class MSIS_AMR_Controller:
     def edit_map_add_obstacle(self, x, y, radius_pixels=5):
         """
         Edits the local map data to add a circular obstacle (Simulated Edit).
-        Note: This edits the Numpy array, not the robot's internal SLAM map directly.
         """
         if self.current_map_grid is None: return
         
         meta = self.map_meta
-        # Convert physical (x, y) to grid index
         idx_x = int((x - meta['origin_x']) / meta['resolution'])
         idx_y = int((y - meta['origin_y']) / meta['resolution'])
         
-        # Use OpenCV to draw a circle on the grid
-        cv2.circle(self.current_map_grid, (idx_x, idx_y), radius_pixels, (255), -1) # 255 in uint8 usually means obstacle or specific value depending on map standard
+        cv2.circle(self.current_map_grid, (idx_x, idx_y), radius_pixels, (255), -1) 
         print(f"Added local obstacle at ({x}, {y})")
 
     def add_custom_obstacle_to_robot(self, x1, y1, x2, y2):
-        """
-        Adds a Forbidden Area (Virtual Wall/Obstacle) to the actual robot.
-        """
+        """Adds a Forbidden Area to the actual robot."""
         return self.robot.add_rectangle_area("forbidden_area", [x1, y1], [x2, y2])
 
     # ---------------------------------------------------------
@@ -244,16 +337,12 @@ class MSIS_AMR_Controller:
         return self.robot.move_to(x, y)
 
     def move_straight(self, distance_meters):
-        """
-        Moves the robot straight forward by a specific distance.
-        Calculates target point based on current Yaw.
-        """
+        """Moves the robot straight forward by a specific distance."""
         pose = self.robot.get_pose()
         if not pose: return
         
         curr_x, curr_y, curr_yaw = pose['x'], pose['y'], pose['yaw']
         
-        # Calculate target based on yaw
         target_x = curr_x + distance_meters * math.cos(curr_yaw)
         target_y = curr_y + distance_meters * math.sin(curr_yaw)
         
@@ -261,60 +350,41 @@ class MSIS_AMR_Controller:
         return self.move_to_target(target_x, target_y)
 
     def move_rectangular_path(self, target_x, target_y):
-        """
-        Moves the robot using an orthogonal (rectangular) path.
-        Logic: Current -> Intermediate (Corner) -> Target.
-        Ensures 90-degree turns.
-        """
+        """Moves the robot using an orthogonal (rectangular) path."""
         pose = self.robot.get_pose()
         if not pose: return
 
         start_x, start_y = pose['x'], pose['y']
         
-        # Determine corner point (Option: Move X first, then Y)
         corner_x = target_x
         corner_y = start_y
         
         print(f"Executing Rectangular Move: ({start_x},{start_y}) -> ({corner_x},{corner_y}) -> ({target_x},{target_y})")
         
-        # 1. Move to Corner
         self.move_to_target(corner_x, corner_y)
-        self.wait_until_idle() # Blocking wait
+        self.wait_until_idle() 
         
-        # 2. Move to Target
         self.move_to_target(target_x, target_y)
         self.wait_until_idle()
 
     def move_multi_point(self, points_list):
-        """
-        Moves through a list of coordinates sequentially.
-        points_list: list of dicts [{'x': 1.0, 'y': 2.0}, ...]
-        """
+        """Moves through a list of coordinates sequentially."""
         print(f"Starting Multi-point Move: {len(points_list)} points")
         for i, pt in enumerate(points_list):
             print(f"Step {i+1}: Going to ({pt['x']}, {pt['y']})")
             self.move_to_target(pt['x'], pt['y'])
             self.wait_until_idle()
-            time.sleep(0.5) # Short pause between points
+            time.sleep(0.5) 
 
     def wait_until_idle(self, timeout=30):
-        """
-        Blocks execution until the robot finishes moving.
-        Checks status periodically.
-        """
+        """Blocks execution until the robot finishes moving."""
         start_time = time.time()
-        while time.time() - start_time < timeout:
-            # Note: This checks if the robot is close to target or status is idle.
-            # Simplified check using velocity or status API if available.
-            # Here we check if 'actions' list is empty or use a simple sleep for demo.
-            
+        while time.time() - start_time < timeout: 
             actions = self.robot.get_action_status()
-            # If actions list is empty or None, robot is idle
             if not actions or len(actions) == 0:
                 print(" > Movement finished.")
                 return True
             
-            # Additional check: distance to target (omitted for brevity)
             self.record_path_point()
             time.sleep(0.5)
         print(" > Wait Timeout.")
@@ -327,9 +397,7 @@ class MSIS_AMR_Controller:
             self.path_history.append((p['x'], p['y']))
 
     def display_path_on_map(self):
-        """
-        Draws the recorded path on the current map grid (for SVG export or view).
-        """
+        """Draws the recorded path on the current map grid."""
         if self.current_map_grid is None or not self.path_history: return
         
         meta = self.map_meta
@@ -337,11 +405,6 @@ class MSIS_AMR_Controller:
              idx_x = int((px - meta['origin_x']) / meta['resolution'])
              idx_y = int((py - meta['origin_y']) / meta['resolution'])
              
-             # Draw small dot for path
-             try:
-                # 127 is usually gray, 0 is white/free, 255 is black/obstacle. 
-                # Marking with distinct value if possible or editing grid.
-                if 0 <= idx_x < meta['width'] and 0 <= idx_y < meta['height']:
-                    self.current_map_grid[idx_y, idx_x] = 100 # Arbitrary value for path
-             except: pass
+             if 0 <= idx_x < meta['width'] and 0 <= idx_y < meta['height']:
+                    self.current_map_grid[idx_y, idx_x] = 100 
         print(f"Path with {len(self.path_history)} points marked on map data.")
