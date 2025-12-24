@@ -412,8 +412,8 @@ with gr.Blocks(title="MSIS Control Studio") as demo:
             
             with gr.Accordion("➕ Add Robot", open=False):
                 with gr.Row():
-                    txt_name = gr.Textbox(label="Name", placeholder="AMR_01")
-                    txt_ip = gr.Textbox(label="IP", placeholder="192.168.0.x")
+                    txt_name = gr.Textbox(label="Name", placeholder="AMR_01", value="AMR_0")
+                    txt_ip = gr.Textbox(label="IP", placeholder="192.168.0.x", value="192.168.0.")
                 btn_add_robot = gr.Button("Add", elem_classes=["btn-primary-custom"])
                 msg_box = gr.Markdown("")
 
