@@ -10,7 +10,7 @@ body { margin: 0; padding: 0; background-color: #808080 !important; }
 footer { display: none !important; }
 .leaflet-control-attribution { display: none !important; }
 .hidden-elem { display: none !important; }
-#top_menu { background-color: #424242 !important; color: #FFFFFF !important; padding: 10px 25px; border-bottom: none; }
+#top_menu { background-color: #808080 !important; color: #FFFFFF !important; padding: 10px 25px; border-bottom: none; }
 .menu_btn { background: none !important; border: none !important; color: #FFFFFF !important; font-weight: 700 !important; cursor: pointer; font-size: 16px !important; }
 .menu_btn:hover { color: #4CAF50 !important; }
 #sidebar { background-color: #ffffff !important; border-right: 1px solid #dcdcdc !important; padding: 20px !important; }
