@@ -13,7 +13,7 @@ from jinja2 import Template
 
 # api.py에서 manager import
 try:
-    from rest_api import manager
+    from gui.rest_api import manager
 except ImportError:
     print("Warning: rest_api.py not found. Using dummy manager.")
     class Dummy: pass

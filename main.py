@@ -1,5 +1,5 @@
 # main.py
-from gui import create_gui, custom_css
+from gui.gui import create_gui, custom_css
 
 if __name__ == "__main__":
     demo = create_gui()

@@ -1,6 +1,6 @@
 # gui.py
 import gradio as gr
-import gui_utils  # 위에서 만든 utils.py 임포트
+from . import gui_utils  # 위에서 만든 utils.py 임포트
 
 # --------------------------
 # GUI Settings
@@ -31,7 +31,7 @@ def create_gui():
     robot_names = gui_utils.get_robot_list()
     init_val = robot_names[0] if robot_names else None
 
-    with gr.Blocks(title="MSIS Control Studio", css=custom_css) as demo:
+    with gr.Blocks(title="MSIS Control Studio") as demo:
         # State Variables
         waypoint_state = gr.State([]) 
         poi_state = gr.State([]) 
