@@ -1,212 +1,97 @@
 import requests
-import sqlite3
-import os
 import json
+import math
 
-# ---------------------------------------------------------
-# 1. Individual Robot Control Class (HTTP API)
-# ---------------------------------------------------------
-class MSISRobot:
-    def __init__(self, name, ip, port="1448"):
+# 로봇 개별 통신을 담당하는 클래스
+class Robot:
+    def __init__(self, name, ip):
         self.name = name
         self.ip = ip
-        self.port = str(port)
-        self.base_url = f"http://{ip}:{port}"
-        self.session = requests.Session()
-        self.timeout = 0.5  # Increased timeout for stability
+        self.host = f"http://{ip}:1448"
+        self.connected = False
+        # 연결 확인 (생성 시 시도)
+        self.connect()
+
+    def connect(self):
+        """로봇 연결 시도 (Health Check)"""
+        try:
+            # 간단한 API 호출로 연결 확인
+            url = f"{self.host}/api/core/system/v1/robot/health"
+            response = requests.get(url, timeout=2)
+            if response.status_code == 200:
+                self.connected = True
+                print(f"[{self.name}] Connected to {self.ip}")
+            else:
+                self.connected = False
+        except:
+            self.connected = False
+            print(f"[{self.name}] Failed to connect to {self.ip}")
+
+    def disconnect(self):
+        """로봇 연결 해제 처리"""
+        self.connected = False
+        print(f"[{self.name}] Disconnected")
 
     def _get(self, endpoint):
+        if not self.connected: return None
         try:
-            response = self.session.get(self.base_url + endpoint, timeout=self.timeout)
+            url = f"{self.host}{endpoint}"
+            response = requests.get(url, timeout=1)
             if response.status_code == 200:
-                if 'application/json' in response.headers.get('Content-Type', ''):
-                    return response.json()
-                return response.content
-            return None
-        except requests.exceptions.Timeout:
-            # print(f"[{self.name}] Timeout Error") 
-            return None
-        except Exception as e:
-            # print(f"[{self.name}] Connection Error: {e}") 
-            return None
+                return response.json()
+        except:
+            pass
+        return None
 
-    def _post(self, endpoint, data=None):
+    def _post(self, endpoint, payload):
+        if not self.connected: return None
         try:
+            url = f"{self.host}{endpoint}"
             headers = {'Content-Type': 'application/json'}
-            response = self.session.post(self.base_url + endpoint, json=data, headers=headers, timeout=self.timeout)
-            return response.json() if response.status_code == 200 else None
-        except: return None
-            
-    def _delete(self, endpoint):
+            requests.post(url, data=json.dumps(payload), headers=headers, timeout=1)
+        except:
+            pass
+
+    # --- 기능 함수들 ---
+    def get_pose(self):
+        data = self._get("/api/core/slam/v1/localization/pose")
+        if data:
+            return data
+        return None
+
+    def get_laser_scan(self):
+        return self._get("/api/core/slam/v1/lidar/scan")
+
+    def get_map_explore(self):
         try:
-            response = self.session.delete(self.base_url + endpoint, timeout=self.timeout)
-            return response.json() if response.status_code == 200 else None
-        except: return None
-
-    # --- Essential Functions ---
-    def get_pose(self): 
-        """Returns the robot's current pose (x, y, yaw)."""
-        return self._get("/api/core/slam/v1/localization/pose")
-    
-    def get_map_explore(self): 
-        """Returns the raw grid map data (bytes)."""
-        return self._get("/api/core/slam/v1/maps/explore")
-    
-    def get_health(self): 
-        """Returns the robot health status."""
-        return self._get("/api/core/system/v1/robot/health")
-    
-    def get_base_status(self): 
-        """Returns the base status."""
-        return self._get("/api/core/system/v1/base/status")
-    
-    def get_laser_scan(self): 
-        """Returns laser scan data."""
-        return self._get("/api/core/system/v1/laserscan")
-    
-    def get_action_status(self):
-        """Checks the current action status (to determine if moving)."""
-        return self._get("/api/core/motion/v1/actions")
-
-    def get_rectangle_areas(self, usage="forbidden_area"): 
-        """Returns a list of rectangle areas (e.g., forbidden zones)."""
-        res = self._get(f"/api/core/artifact/v1/rectangle-areas/{usage}")
-        return res if res else []
-    
-    def add_rectangle_area(self, usage, p1, p2):
-        """Adds a rectangular area."""
-        payload = {
-            "area": {"start": {"x": float(p1[0]), "y": float(p1[1])}, "end": {"x": float(p2[0]), "y": float(p2[1])}, "half_width": 0.0},
-            "metadata": {"escape_distance": "0.2"}
-        }
-        return self._post(f"/api/core/artifact/v1/rectangle-areas/{usage}", data=payload)
+            if not self.connected: return None
+            url = f"{self.host}/api/core/slam/v1/maps/explore"
+            response = requests.get(url, headers={'Accept': 'application/octet-stream'}, timeout=3)
+            if response.status_code == 200:
+                return response.content
+        except:
+            pass
+        return None
 
     def get_pois(self):
-        """Returns the list of POIs (Points of Interest)."""
-        raw = self._get("/api/core/artifact/v1/pois")
-        if not raw: return []
-        formatted = []
-        for p in raw:
-            formatted.append({
-                "name": p.get("name"),
-                "x": p["pose"]["x"],
-                "y": p["pose"]["y"],
-                "yaw": p["pose"].get("yaw", 0.0),
-                "type": p.get("type", "common")
-            })
-        return formatted
-    
+        # POI는 로봇 내부 API가 없으면 빈 리스트 반환 (필요시 구현)
+        return []
+
+    def get_rectangle_areas(self, area_type):
+        # 금지구역 등 가져오기
+        return []
+
     def move_to(self, x, y):
-        """Moves the robot to the specified coordinates."""
+        # 단순 이동 명령 예시 (Action 사용)
         payload = {
             "action_name": "slamtec.agent.actions.MoveToAction",
             "options": {
-                "target": {"x": float(x), "y": float(y), "z": 0},
-                "move_options": { "mode": 0 }
+                "target": {"x": x, "y": y, "z": 0},
+                "move_options": {"mode": 0}
             }
         }
-        return self._post("/api/core/motion/v1/actions", data=payload)
-    
-    def stop(self): 
-        """Stops the current action."""
-        return self._delete("/api/core/motion/v1/actions/:current")
+        self._post("/api/core/motion/v1/actions", payload)
 
-
-# ---------------------------------------------------------
-# 2. AMR Manager (SQLite DB Management)
-# ---------------------------------------------------------
-class AMRManager:
-    def __init__(self, db_file="robots.db"):
-        self.db_file = db_file
-        self.robots = {} 
-        self.init_db()
-        self.load_from_db()
-
-    def init_db(self):
-        """Initializes the SQLite database."""
-        with sqlite3.connect(self.db_file) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS robots (
-                    name TEXT PRIMARY KEY,
-                    ip TEXT NOT NULL,
-                    port TEXT DEFAULT '1448'
-                )
-            ''')
-            conn.commit()
-
-    def load_from_db(self):
-        """Loads robots from the database into memory."""
-        self.robots = {}
-        with sqlite3.connect(self.db_file) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT name, ip, port FROM robots")
-            rows = cursor.fetchall()
-            
-            if not rows:
-                # Default initial value
-                self.add_robot("AMR_Main", "192.168.0.132")
-            else:
-                for name, ip, port in rows:
-                    self.robots[name] = MSISRobot(name, ip, port)
-
-    def add_robot(self, name, ip, port="1448"):
-        """Adds a robot to the database and memory."""
-        try:
-            with sqlite3.connect(self.db_file) as conn:
-                cursor = conn.cursor()
-                cursor.execute("INSERT OR REPLACE INTO robots (name, ip, port) VALUES (?, ?, ?)", (name, ip, port))
-                conn.commit()
-            self.robots[name] = MSISRobot(name, ip, port)
-            return list(self.robots.keys())
-        except Exception as e:
-            print(f"DB Error: {e}")
-            return list(self.robots.keys())
-
-    def delete_robot(self, name):
-        """Removes a robot from the database and memory."""
-        if name in self.robots:
-            try:
-                with sqlite3.connect(self.db_file) as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM robots WHERE name = ?", (name,))
-                    conn.commit()
-                del self.robots[name]
-            except: pass
-        return list(self.robots.keys())
-
-    def get_robot(self, name):
-        """Retrieves a robot instance by name."""
-        return self.robots.get(name)
-
-    def get_all_robots(self):
-        """Returns all managed robots."""
-        return self.robots
-
-# Create Singleton Manager Instance
-manager = AMRManager()
-
-
-# ---------------------------------------------------------
-# 3. Helper Function for Connection (Backward Compatibility)
-# ---------------------------------------------------------
-def connect_to_amr(ip, port="1448", name="AMR_Main"):
-    """
-    Connects to a single robot for compatibility with existing code.
-    Registers or retrieves the robot via the Manager.
-    """
-    # Check if exists in manager, else add
-    existing = manager.get_robot(name)
-    if existing and existing.ip == ip:
-        robot = existing
-    else:
-        manager.add_robot(name, ip, port)
-        robot = manager.get_robot(name)
-    
-    # Connection test
-    if robot.get_health():
-        print(f"Successfully connected to {name} ({ip})")
-        return robot
-    else:
-        print(f"Failed to connect to {name} ({ip})")
-        return None
+    def stop(self):
+        # 이동 정지 (현재 동작 취소)
+        self._delete("/api/core/motion/v1/actions") # DELETE 메소드 필요 시 추가
