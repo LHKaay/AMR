@@ -1,0 +1,16 @@
+amrs:
+  - name: AMR_01
+    host: 10.255.70.205
+    port: 22
+    user: msis
+    password: msis
+    base_dir: /home/msis/workspace
+    key: ~/.ssh/id_rsa
+
+  - name: AMR_02
+    host: 10.125.145.152
+    port: 5000
+    user: msis
+    password: msis
+    base_dir: /home/msis/remote_test
+    key: ~/.ssh/id_rsa
